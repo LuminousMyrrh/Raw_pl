@@ -178,7 +178,7 @@ impl Scanner {
             "if" => self.add_token(If),
             "nil" => self.add_token(Nil),
             "or" => self.add_token(Or),
-            "repay" => self.add_token(Repay),
+            "return" => self.add_token(Repay),
             "super" => self.add_token(Super),
             "this" => self.add_token(This),
             "true" => self.add_token(True),

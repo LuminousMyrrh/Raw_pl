@@ -27,6 +27,7 @@ pub enum RuntimeValType {
         decl_env: Environment,
     },
     ReturnRT(Box<RuntimeVal>, Option<Type>),
+    Bool(bool),
 }
 
 pub fn eval(stmt_node: Statement, env: &mut Environment) -> Option<RuntimeVal> {
@@ -35,7 +36,7 @@ pub fn eval(stmt_node: Statement, env: &mut Environment) -> Option<RuntimeVal> {
         Statement::OperState(s) => Some(eval_operation_declaration(s, env)),
         Statement::OperCallState(s) => Some(eval_oper_call(s, env).unwrap()),
         Statement::VarState(var) => Some(eval_var(var, env)),
-        Statement::IfState(_state) => todo!(),
+        Statement::IfState(ifstmt) => Some(eval_if_stmt(ifstmt, env).unwrap()),
         Statement::BinaryState(bin) => Some(eval_binary(bin, env).unwrap()),
         Statement::Val(v) => match v {
             //
@@ -43,7 +44,7 @@ pub fn eval(stmt_node: Statement, env: &mut Environment) -> Option<RuntimeVal> {
                 ExpressionType::IntNumber(i) => Some(RuntimeVal::new(IntRT(i))),
                 ExpressionType::FloatNumber(f) => Some(RuntimeVal::new(FloatRT(f))),
                 ExpressionType::BinaryExpression { .. } => Some(eval_binary(expr, env).unwrap()),
-								_ => todo!(), // Bool must be covered
+                _ => todo!(), // Bool must be covered
             },
             VarValue::StringVal(val) => Some(RuntimeVal::new(Stri(val))),
         },
@@ -121,7 +122,6 @@ fn eval_float_numeric_binary(lhs: f64, rhs: f64, operator: String) -> Result<Run
 }
 
 pub fn eval_program(prog: AST, env: &mut Environment) -> Result<(), String> {
-		println!("hello");
     let mut last_evaled: Option<RuntimeVal> = None;
 
     for stmt in prog.statements {
@@ -130,10 +130,9 @@ pub fn eval_program(prog: AST, env: &mut Environment) -> Result<(), String> {
     }
 
     if last_evaled.is_some() {
-        //println!("Completed");
         Ok(())
     } else {
-        Err(format!("Cannot bro: {:#?}", last_evaled))
+        Err(format!("Cannot evaluate statement: {:#?}", last_evaled))
     }
 }
 
@@ -167,6 +166,63 @@ fn eval_operation_declaration(
     };
     env.declare_oper(operation_dec.name, RuntimeVal::new(oper))
         .unwrap()
+}
+
+fn eval_if_stmt(stmt_node: IfStatement, env: &mut Environment) -> Result<RuntimeVal, String> {
+    if let Some(tp) = stmt_node.test_part {
+        match tp.e_type {
+            ExpressionType::BinaryExpression {
+                left,
+                operator,
+                right } => {
+                let result = eval_logical_expr(*left, *right, operator.value.unwrap(), env)?;
+                match result.rt_type {
+                    RuntimeValType::Bool(value) => {
+                        if value {
+                            let mut last_evaled: Option<RuntimeVal> = None;
+                            for s in stmt_node.consequent.iter() {
+                                last_evaled = eval(s.to_owned(), env);
+                            }
+                            Ok(last_evaled.unwrap())
+                        } else {
+                            // Execute the alternite part
+                            if let Some(alt) = stmt_node.alternite {
+                                eval_if_stmt(*alt, env)
+                            } else {
+                                Err(format!("Runtime error while evaluating alternite part: {:#?}", stmt_node.alternite))
+                            }
+                        }
+                    },
+                    _ => Err("wtf".to_string())
+                }
+            }
+            _ => Err("Runtime error: Test part must be Binary expression!".to_string())
+        }
+    } else {
+        let mut last_evaled: Option<RuntimeVal> = None;
+        for s in stmt_node.consequent.iter() {
+            last_evaled = eval(s.to_owned(), env);
+        }
+        Ok(last_evaled.unwrap())
+    }
+}
+
+fn eval_logical_expr(left: Statement, right: Statement, operator: String, env: &mut Environment) -> Result<RuntimeVal, String> {
+    let l = eval(left, env).unwrap();
+    let r = eval(right, env).unwrap();
+
+    match (l.rt_type, r.rt_type) {
+        (IntRT(lhs), IntRT(rhs)) => {
+            match operator.as_str() {
+                "==" => Ok(RuntimeVal::new(RuntimeValType::Bool(lhs == rhs))),
+                "!=" => Ok(RuntimeVal::new(RuntimeValType::Bool(lhs != rhs))),
+                "<" => Ok(RuntimeVal::new(RuntimeValType::Bool(lhs < rhs))),
+                ">" => Ok(RuntimeVal::new(RuntimeValType::Bool(lhs > rhs))),
+                _ => Err("Invalid operator!".to_string()),
+            }
+        }
+        _ => Err("Invalid operand types for binary expression".to_string()),
+    }
 }
 
 fn eval_oper_call(oper: OperCall, env: &mut Environment) -> Result<RuntimeVal, String> {
@@ -209,21 +265,24 @@ fn eval_oper_call(oper: OperCall, env: &mut Environment) -> Result<RuntimeVal, S
             _ => return Err("No body? Idk how this happen".to_string()),
         };
 
-				let mut res: Option<RuntimeVal> = None; // Initialize the result
+        let mut res: Option<RuntimeVal> = None; // Initialize the result
 
-				if !func_body.is_empty() {
-						for s in func_body.iter() {
-								match s {
-										Statement::RetState(_) => {
-												res = Some(eval(s.to_owned(), &mut scope).unwrap());
-												//println!("{}", res.clone().unwrap());
-												return Ok(res.unwrap());
-										}
-										_ => res = Some(eval(s.to_owned(), &mut scope).unwrap()),
-								}
-						}
-				};
-				return Ok(if let Some(r) = res { r } else { return Err("Okey this is shit".to_string()) });
+        if !func_body.is_empty() {
+            for s in func_body.iter() {
+                match s {
+                    Statement::RetState(_) => {
+                        res = Some(eval(s.to_owned(), &mut scope).unwrap());
+                        return Ok(res.unwrap());
+                    }
+                    _ => res = Some(eval(s.to_owned(), &mut scope).unwrap()),
+                }
+            }
+        };
+        return Ok(if let Some(r) = res {
+            r
+        } else {
+            return Err("Okey this is shit".to_string());
+        });
     }
 
     match oper.clone().oper_name.as_str() {
@@ -257,6 +316,7 @@ impl fmt::Display for RuntimeVal {
             RuntimeValType::Stri(s) => write!(f, "{}", s),
             RuntimeValType::ReturnRT(rv, _) => write!(f, "{}", rv),
             RuntimeValType::OperationRT { .. } => write!(f, "Cannot output Operation!"),
+            RuntimeValType::Bool ( b ) => write!(f, "{}", b),
         }
     }
 }

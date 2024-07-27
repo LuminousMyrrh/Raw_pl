@@ -35,7 +35,6 @@ fn run() {
     let mut parser = Parser::new(scanner.scan_tokens());
     let mut env = Environment::new(None);
 
-    parser.parse().unwrap();
     eval_program(parser.parse().unwrap(), &mut env).unwrap();
 }
 

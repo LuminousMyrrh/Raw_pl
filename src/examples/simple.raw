@@ -1,3 +1,9 @@
-if 10 == 10 and 15 == 15 {
-	 println("hello");
-};
+oper check(n) {
+     if n == 10 {
+        return 1;
+     } else {
+        return 0;
+     }
+}
+
+println(check(10));

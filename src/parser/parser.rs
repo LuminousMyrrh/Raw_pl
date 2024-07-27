@@ -2,13 +2,13 @@ use crate::parser::ast::Statement::IfState;
 use crate::parser::ast::Statement::Val;
 use crate::parser::ast::Statement::VarState;
 use crate::parser::ast::{Statement, *};
-//use backtrace::Backtrace;
 
 use crate::scan::token::{Token, TokenType, TokenType::*};
 
 pub struct Parser {
     tokens: Vec<Token>,
     index: usize,
+    line: usize,
     c_token: Token,
 }
 
@@ -17,6 +17,7 @@ impl Parser {
         Parser {
             tokens: tokens.clone(),
             index: 0,
+            line: 0,
             c_token: tokens[0].clone(),
         }
     }
@@ -32,17 +33,20 @@ impl Parser {
         let mut prog: AST = AST::new(Vec::new());
 
         loop {
-            if let Ok(Some(s)) = self.parse_statement() {
-                prog.push_statement(s);
-            }
             if self.c_token.t_type == Semicolon {
+                self.advance()?;
+                self.line += 1;
                 continue;
             } else if self.c_token.t_type == Eof {
                 break;
             }
+
+            if let Ok(Some(s)) = self.parse_statement() {
+                prog.push_statement(s);
+            }
         }
 
-        //println!("prog: {:#?}", prog);
+        println!("prog: {:#?}", prog);
         Ok(prog)
     }
 
@@ -76,18 +80,9 @@ impl Parser {
             Oper => statement = Some(*self.parse_operation().unwrap().unwrap()),
             True => todo!(),
             False => todo!(),
-            Semicolon => {
-                self.advance()?;
-                return Ok(None);
-            }
-            _ => {
-                return Err(format!(
-                    "Unexpected token:{} Next token: {}",
-                    self.c_token, self.next_token().unwrap()
-                ))
-            }
+            _ => return Err(format!("Unexpected token: {}", self.c_token)),
         };
-				//println!("{:#?}", statement);
+        //println!("{:#?}", statement);
         Ok(statement)
     }
 
@@ -197,10 +192,6 @@ impl Parser {
     }
 
     fn parse_assignment_expr(&mut self) -> Result<Statement, String> {
-        //let location = Backtrace::new();
-
-        //print!("assignment() called from {:?}", location);
-        //println!("assigning {}\n", self.c_token.clone());
         let left = self.parse_id();
         self.advance()?; // skip id
         self.advance()?; // skip '=' token
@@ -255,12 +246,7 @@ impl Parser {
     }
 
     fn advance(&mut self) -> Result<(), String> {
-        // let location = Backtrace::new();
-
-        // print!("advance() called from {:?}", location);
-        // println!("advancing {}\n", self.c_token.clone());
         if self.index < self.tokens.len() - 1 {
-            //println!("advancing: {}", self.c_token.clone());
             self.index += 1;
             self.c_token = self.tokens[self.index].clone();
             Ok(())
@@ -277,72 +263,99 @@ impl Parser {
             return Ok(Statement::RetState(RetStatement::new(ret_t, None)));
         }
         let value = Some(Box::new(self.parse_statement().unwrap().unwrap()));
+        self.advance()?;
         let r = RetStatement::new(ret_t, value);
         Ok(Statement::RetState(r))
     }
 
     fn parse_if(&mut self) -> Result<IfStatement, String> {
-				self.advance()?; // skip "if" token
-				let test = self.parse_bin_expr().unwrap();
+        self.advance()?; // skip "if" }
+        let test: Option<Box<Expression>> = if self.c_token.t_type != LBrace {
+            Some(Box::new(self.parse_bin_expr().unwrap()))
+        } else {
+            None
+        };
 
-				self.advance()?; // go to consequent part
+        self.advance()?; // go to consequent part
 
-				let mut consequent: Vec<Statement> = Vec::new();
-				while self.c_token.t_type != RBrace {
-						consequent.push(self.parse_statement().unwrap().unwrap());
-						self.advance()?;
-				};
+        let mut consequent: Vec<Statement> = Vec::new();
+        while self.c_token.t_type != RBrace {
+            if let Some(stmt) = self.parse_statement().unwrap() {
+                consequent.push(stmt);
+            }
+            if self.c_token.t_type != RBrace {
+                self.advance()?;
+            }
+        }
 
-				Ok(IfStatement::new(test, consequent, None))
+        self.advance()?; // skip rbrace
+        if self.c_token.t_type == TokenType::Else && self.next_token().unwrap().t_type == If {
+            self.advance()?;
+            let alter = self.parse_if().unwrap();
+            return Ok(IfStatement::new(test, consequent, Some(Box::new(alter))));
+        } else if self.c_token.t_type == Else && self.next_token().unwrap().t_type == LBrace {
+            let alter = self.parse_if().unwrap();
+            return Ok(IfStatement::new(None, consequent, Some(Box::new(alter))));
+        }
 
+        if test.is_some() {
+            return Ok(IfStatement::new(test, consequent, None));
+        }
+        if self.c_token.t_type == RBrace {
+            self.advance()?;
+        }
+        Ok(IfStatement::new(None, consequent, None))
     }
 
-		fn parse_bin_primary_expr(&mut self) -> Result<Box<Statement>, String> {
+    fn parse_bin_primary_expr(&mut self) -> Result<Box<Statement>, String> {
         let token_t = self.c_token.clone().t_type;
 
         let ret: Box<Statement> = match token_t {
             TokenType::Ident => Box::new(Statement::IdentState(self.parse_id())),
             TokenType::IntNum => Box::new(Statement::Val(self.parse_int_num())),
             TokenType::FloatNum => Box::new(Statement::Val(self.parse_float_num())),
-            _ => return Err(format!("Unsupportet token: {:#?}", token_t)),
+            _ => {
+                return Err(format!(
+                    "Unsupportet token: {:#?} in index: {}",
+                    token_t, self.index
+                ))
+            }
         };
 
         Ok(ret)
-		}
+    }
 
-		fn make_bin(&mut self) -> Result<Box<Statement>, String> {
-				let left = self.parse_bin_primary_expr().unwrap();
-				self.advance()?;
-				let operator = self.c_token.clone();
-				self.advance()?;
-				let right = self.parse_bin_primary_expr().unwrap();
-				let ret = Box::new(Statement::BinaryState(Expression::new(ExpressionType::BinaryExpression{
-						left,
-						operator,
-						right
-				})));
-				Ok(ret)
-		}
+    fn make_bin(&mut self) -> Result<Expression, String> {
+        let left = self.parse_bin_primary_expr().unwrap();
+        self.advance()?;
+        let operator = self.c_token.clone();
+        self.advance()?;
+        let right = self.parse_bin_primary_expr().unwrap();
+        let ret = Expression::new(ExpressionType::BinaryExpression {
+            left,
+            operator,
+            right,
+        });
+        Ok(ret)
+    }
 
-		fn parse_bin_expr(&mut self) -> Result<Box<Statement>, String> {
-				let mut left_part = self.make_bin().unwrap();
-				self.advance()?; // next token which is operator
-				while self.c_token.t_type == TokenType::And || self.c_token.t_type == TokenType::Or {
-						let operator = self.c_token.clone();
-						self.advance()?;
-						let right = self.make_bin().unwrap();
-						self.advance()?;
-						let left = left_part.clone();
-						left_part = Box::new(Statement::BinaryState(Expression::new(
-								ExpressionType::BinaryExpression {
-										left,
-										operator,
-										right,
-								}
-						)));
-				}
-				Ok(left_part)
-		}
+    fn parse_bin_expr(&mut self) -> Result<Expression, String> {
+        let mut left_part = self.make_bin().unwrap();
+        self.advance()?; // next token which is operator
+        while self.c_token.t_type == TokenType::And || self.c_token.t_type == TokenType::Or {
+            let operator = self.c_token.clone();
+            self.advance()?;
+            let right = self.make_bin().unwrap();
+            self.advance()?;
+            let left = left_part.clone();
+            left_part = Expression::new(ExpressionType::BinaryExpression {
+                left: Box::new(Statement::BinaryState(left)),
+                operator,
+                right: Box::new(Statement::BinaryState(right)),
+            });
+        }
+        Ok(left_part)
+    }
 
     fn parse_int_num(&self) -> VarValue {
         let val = self.c_token.clone().value.unwrap().parse::<i64>().unwrap();
@@ -373,8 +386,8 @@ impl Parser {
 
     fn parse_operation(&mut self) -> Result<Option<Box<Statement>>, String> {
         self.advance().unwrap(); // skip oper token
-        let oper_name = self.c_token.clone().value.unwrap();
 
+        let oper_name = self.c_token.clone().value.unwrap();
         self.advance().unwrap();
 
         self.expect(LParen)?;
@@ -401,7 +414,9 @@ impl Parser {
         while self.c_token.t_type != RBrace {
             if let Some(v) = self.parse_statement().unwrap() {
                 body.push(v);
-                self.advance()?;
+                if self.c_token.t_type != RBrace {
+                    self.advance()?;
+                }
             }
         }
 

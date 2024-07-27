@@ -37,7 +37,7 @@ impl Environment {
         var_name: String,
         value: RuntimeVal,
     ) -> Result<RuntimeVal, String> {
-        let env = self.resolve(&var_name).unwrap();
+        let env = self.resolve_var(&var_name).unwrap();
         env.vars.insert(var_name.clone(), value);
         Ok(env.lookup_var(var_name))
     }
@@ -61,11 +61,12 @@ impl Environment {
 
     pub fn lookup_var(&mut self, var_name: String) -> RuntimeVal {
 
-        let env = self.resolve(&var_name).unwrap();
+        let env = self.resolve_var(&var_name).unwrap();
         env.vars.get(&var_name).unwrap().clone()
     }
 
-    pub fn resolve(&mut self, var_name: &str) -> Result<&mut Self, String> {
+    pub fn resolve_var(&mut self, var_name: &str) -> Result<&mut Self, String> {
+        //println!("{:#?}", self);
         if self.vars.contains_key(var_name) {
             return Ok(self);
         } else if self.parent.is_none() {
@@ -73,7 +74,7 @@ impl Environment {
         }
 
         if let Some(parent) = self.parent.as_mut() {
-            parent.resolve(var_name)
+            parent.resolve_var(var_name)
         } else {
             Err(format!("Cannot resolve variable: {}", var_name))
         }

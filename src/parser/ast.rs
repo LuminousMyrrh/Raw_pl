@@ -12,17 +12,7 @@ impl AST {
         AST { statements }
     }
     pub fn push_statement(&mut self, val: Statement) {
-        match val {
-            OperState(o) => self.statements.push(Statement::OperState(o)),
-            OperCallState(o) => self.statements.push(Statement::OperCallState(o)),
-            VarState(v) => self.statements.push(Statement::VarState(v)),
-            RetState(v) => self.statements.push(Statement::RetState(v)),
-            IfState(v) => self.statements.push(Statement::IfState(v)),
-            IdentState(i) => self.statements.push(Statement::IdentState(i)),
-            BinaryState(bin) => self.statements.push(Statement::BinaryState(bin)),
-            AssignmentState(bin) => self.statements.push(Statement::AssignmentState(bin)),
-            Val(v) => self.statements.push(Statement::Val(v)),
-        }
+        self.statements.push(val);
     }
 }
 
@@ -60,14 +50,12 @@ impl Variable {
 
 #[derive(Debug, Clone)]
 pub struct Identifier {
-    token: Token,
     pub val: String,
 }
 
 impl Identifier {
     pub fn new(token: Token) -> Self {
         Identifier {
-            token: token.clone(),
             val: token.value.unwrap(),
         }
     }
@@ -102,7 +90,7 @@ impl Expression {
 pub enum ExpressionType {
     IntNumber(i64),
     FloatNumber(f64),
-		Bool(bool),
+    Bool(bool),
     BinaryExpression {
         left: Box<Statement>,
         operator: Token,
@@ -110,41 +98,43 @@ pub enum ExpressionType {
     },
 }
 
-
-
 // EXPRESSION
 
 #[derive(Debug, Clone)]
 pub struct IfStatement {
-		test_part: Box<Statement>, // one == 1 and similar
+    pub test_part: Option<Box<Expression>>, // one == 1 and similar
 
-		consequent: Vec<Statement>, // part which will be executed is test_part is true
-		alternite: Option<Box<IfStatement>>
+    pub consequent: Vec<Statement>, // part which will be executed if test_part is true
+    pub alternite: Option<Box<IfStatement>>,
 }
 
 impl IfStatement {
-		pub fn new(test_part: Box<Statement>, consequent: Vec<Statement>, alternite: Option<Box<IfStatement>>) -> Self {
-				IfStatement {
-						test_part,
-						consequent,
-						alternite
-				}
-		}
+    pub fn new(
+        test_part: Option<Box<Expression>>,
+        consequent: Vec<Statement>,
+        alternite: Option<Box<IfStatement>>,
+    ) -> Self {
+        IfStatement {
+            test_part,
+            consequent,
+            alternite,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Type {
-		Num,
-		RawStr,
-		Bool,
-		Ide,
+    Num,
+    RawStr,
+    Bool,
+    Ide,
 }
 
 #[derive(Debug, Clone)]
 pub struct RetStatement {
     ret_token: Token,
     pub ret_value: Option<Box<Statement>>,
-		pub ret_type: Option<Type>,
+    pub ret_type: Option<Type>,
 }
 
 impl RetStatement {
@@ -152,15 +142,15 @@ impl RetStatement {
         RetStatement {
             ret_token,
             ret_value: ret_value.clone(),
-						ret_type: if let Some(r_v) = ret_value {
-								match *r_v {
-										BinaryState(_) => Some(Type::Num),
-										IdentState(_) => Some(Type::Ide),
-										_ => None,
-								}
-						} else {
-								None
-						}
+            ret_type: if let Some(r_v) = ret_value {
+                match *r_v {
+                    BinaryState(_) => Some(Type::Num),
+                    IdentState(_) => Some(Type::Ide),
+                    _ => None,
+                }
+            } else {
+                None
+            },
         }
     }
 }
@@ -191,7 +181,6 @@ impl OperationDeclaration {
             oper_args,
             body,
         }
-
     }
 }
 
