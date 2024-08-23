@@ -3,13 +3,13 @@ use std::fmt;
 use Statement::*;
 
 #[derive(Debug)]
-pub struct AST {
+pub struct Ast {
     pub statements: Vec<Statement>,
 }
 
-impl AST {
+impl Ast {
     pub fn new(statements: Vec<Statement>) -> Self {
-        AST { statements }
+        Ast { statements }
     }
     pub fn push_statement(&mut self, val: Statement) {
         self.statements.push(val);
@@ -201,9 +201,9 @@ impl OperCall {
 
 // DISPLAY IMPLEMENTATION
 
-impl fmt::Display for AST {
+impl fmt::Display for Ast {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "AST {{\n")?;
+        writeln!(f, "Ast {{\n")?;
         for statement in &self.statements {
             writeln!(f, "  {}\n", statement)?;
         }

@@ -121,7 +121,7 @@ fn eval_float_numeric_binary(lhs: f64, rhs: f64, operator: String) -> Result<Run
     Ok(RuntimeVal::new(RuntimeValType::FloatRT(res)))
 }
 
-pub fn eval_program(prog: AST, env: &mut Environment) -> Result<(), String> {
+pub fn eval_program(prog: Ast, env: &mut Environment) -> Result<(), String> {
     let mut last_evaled: Option<RuntimeVal> = None;
 
     for stmt in prog.statements {

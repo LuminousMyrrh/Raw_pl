@@ -2,6 +2,7 @@ use crate::lexing::ast::Statement::IfState;
 use crate::lexing::ast::Statement::Val;
 use crate::lexing::ast::Statement::VarState;
 use crate::lexing::ast::{Statement, *};
+use colored::*;
 
 use crate::scan::token::{Token, TokenType, TokenType::*};
 
@@ -29,8 +30,8 @@ impl Parser {
         }
     }
 
-    pub fn parse(&mut self) -> Result<AST, String> {
-        let mut prog: AST = AST::new(Vec::new());
+    pub fn parse(&mut self) -> Result<Ast, String> {
+        let mut prog: Ast = Ast::new(Vec::new());
 
         loop {
             if self.c_token.t_type == Semicolon {
@@ -54,56 +55,62 @@ impl Parser {
             TokenType::If => Ok(IfState(self.parse_if()?)),
             TokenType::Repay => Ok(self.parse_return()?),
             TokenType::IntNum | TokenType::FloatNum => Ok(*self.parse_expr()?),
-            TokenType::Ident => Ok(self.parse_ident_statement().unwrap().unwrap()),
+            TokenType::Ident => {
+                Ok(self.parse_ident_statement().unwrap())
+            },
             TokenType::RawStr => Ok(Val(self.parse_string())),
             TokenType::Oper => Ok(*self.parse_operation()?.unwrap()),
             TokenType::True => todo!(),
             TokenType::False => todo!(),
             _ => {
+                eprintln!("{} token in statement: {}", "Unexpected".red(), self.c_token.clone());
                 Err(self.report_error().err().unwrap())
             }
         }
     }
 
     fn report_error(&self) -> Result<(), String> {
-        let mut temp_tokens: Vec<Token> = Vec::new();
-        let mut idx = self.index;
-        let mut temp_token = self.c_token.clone();
+        let start_index = self.index.saturating_sub(3);
+        let mut end_index = self.index;
+        let mut temp_token = self.c_token.clone().t_type;
 
-        while (temp_token.t_type != LBrace || temp_token.t_type != RBrace) && idx != 0 {
-            temp_tokens.push(temp_token.clone());
-            idx -= 1;
-            temp_token = self.tokens[idx].clone();
+        while (temp_token != Semicolon && temp_token != Eof && temp_token != RBrace) && end_index != self.index + 5 {
+            temp_token = self.tokens[end_index].clone().t_type;
+            end_index += 1;
         }
 
-        let mut out = temp_tokens
+        let tokens_to_report: Vec<Token> = self.tokens[start_index..end_index].to_vec();
+
+        let output: Vec<String> = tokens_to_report
             .iter()
-            .map(|t| {
-                if t == &self.c_token {
-                    format!(">{}<", t.value) // Surround with > and < if equal
+            .map(|token| {
+                if token == &self.c_token {
+                    format!("{}", token.value.red().underline())
                 } else {
-                    t.value.clone() // Otherwise, just clone the value
+                    token.value.clone()
                 }
             })
-            .collect::<Vec<String>>();
-        out.reverse();
-        let out = out.join(" ");
-        Err(out)
+            .collect();
+
+        let output_message = output.join(" ");
+
+        eprintln!("\n{}\n \n\t{}\n", "Parsing error:".red().bold(), output_message);
+        Err("Parsing error".to_string())
     }
 
-    // Helper method to handle Ident statements
-    fn parse_ident_statement(&mut self) -> Result<Option<Statement>, String> {
+
+    fn parse_ident_statement(&mut self) -> Result<Statement, String> {
         let next_token = self.next_token()?;
 
         match next_token.t_type {
-            TokenType::LParen => Ok(Some(self.parse_oper_call()?)),
+            TokenType::LParen => Ok(self.parse_oper_call()?),
             TokenType::Plus | TokenType::Minus | TokenType::Slash | TokenType::Star => {
-                Ok(Some(*self.parse_expr()?))
+                Ok(*self.parse_expr()?)
             }
-            TokenType::Equal => Ok(Some(self.parse_assignment_expr()?)),
+            TokenType::Equal => Ok(self.parse_assignment_expr()?),
             _ => {
                 self.c_token = next_token;
-                Ok(Some(Statement::IdentState(self.parse_id())))
+                Ok(Statement::IdentState(self.parse_id()))
             }
         }
     }
@@ -130,11 +137,8 @@ impl Parser {
             },
             IntNum | FloatNum => *self.parse_expr().unwrap(),
             _ => {
-                return Err(format!(
-                    "Unexpected token: {} In line: {}",
-                    self.c_token.clone(),
-                    self.tokens[self.index]
-                ))
+                eprintln!("{} token in var: {}", "Unexpected".red(), self.c_token.clone());
+                return Err(self.report_error().err().unwrap());
             }
         };
 
@@ -143,7 +147,9 @@ impl Parser {
     }
 
     fn parse_id(&self) -> Identifier {
-        Identifier::new(self.c_token.clone())
+        let id = self.c_token.clone();
+        println!("no {}", id);
+        Identifier::new(id)
     }
 
     fn parse_expr(&mut self) -> Result<Box<Statement>, String> {
@@ -165,12 +171,13 @@ impl Parser {
                 self.advance()?;
                 expr
             }
-            _ => return Err(format!("Unsupportet token: {:#?}", token_t)),
+            _ => {
+                eprintln!("{} token in var: {}", "Unsupported".red(), self.c_token.clone());
+                return Err(self.report_error().err().unwrap());
+            }
+,
         };
 
-        if self.c_token.t_type != Semicolon {
-            self.advance()?;
-        }
         Ok(ret)
     }
 
@@ -222,49 +229,52 @@ impl Parser {
     }
 
     fn parse_oper_call(&mut self) -> Result<Statement, String> {
-        let name = self.c_token.clone().value;
-        let is_native: bool = match name.as_str() {
-            "print" | "println" => true,
-            "something" => true,
-            "aoeuaoe" => true,
-            _ => false,
-        };
-        self.advance()?; // pass oper name
+        // Capture the operator name
+        let name = self.c_token.value.clone();
+        let is_native = matches!(name.as_str(), "print" | "println" | "something" | "aoeuaoe");
 
-        self.expect(TokenType::LParen)?; // expect Lparen
-        self.advance()?; // skip Lparen
+        self.advance()?;
+        self.expect(TokenType::LParen)?;
+        self.advance()?;
 
-        let mut args: Vec<Statement> = vec![];
+        let mut args: Vec<Statement> = Vec::new();
 
-        while self.c_token.t_type != TokenType::RParen {
-            let arg = self.parse_statement().unwrap();
-            args.push(arg.clone());
+        loop {
+            // Parse the next argument
+            let arg = self.parse_statement().map_err(|e| format!("Failed to parse argument: {}", e))?;
+            args.push(arg);
+
             if self.c_token.t_type != RParen {
                 self.advance()?;
             }
 
-            if self.c_token.t_type == TokenType::Comma {
-                self.advance()?; // skip comma
-            } else if self.c_token.t_type == TokenType::RParen {
-                break; // if encounters with ) then quit loop
-            } else {
-                return Err(format!(
-                    "Expected ',' or ')', found: {} In line: {}",
-                    self.c_token,
-                    self.tokens[self.index].value.clone()
-                ));
+            // Check for a comma or closing parenthesis
+            match self.c_token.t_type {
+                TokenType::Comma => {
+                    self.advance()?; // Skip comma
+                    continue;
+                },
+                TokenType::RParen => {
+                    self.advance()?;
+                    break;
+                }, // Exit loop on closing parenthesis
+                _ => {
+                    eprintln!("{} token in oper call: {}", "Unexpected".red(), self.c_token.clone());
+                    return Err(self.report_error().err().unwrap());
+                }
             }
         }
 
-        self.expect(TokenType::RParen)?; // expect Close paren
-        self.advance()?; // Skip rparen
+        // Check for unexpected tokens after the closing parenthesis
+        if self.c_token.t_type != TokenType::Eof && self.c_token.t_type != TokenType::Semicolon {
+            eprintln!("{} token in oper call end: {}", "Unexpected".red(), self.c_token.clone());
+            return Err(self.report_error().err().unwrap());
+        }
 
-        Ok(Statement::OperCallState(OperCall::new(
-            name,
-            Some(args),
-            is_native,
-        )))
+        Ok(Statement::OperCallState(OperCall::new(name, Some(args), is_native)))
     }
+
+
 
     fn advance(&mut self) -> Result<(), String> {
         self.index += 1;
@@ -285,7 +295,6 @@ impl Parser {
 
         let value = Some(Box::new(self.parse_statement().unwrap()));
         //self.advance()?;
-        //println!("c token: {}", self.c_token.clone());
         let r = RetStatement::new(value);
         Ok(Statement::RetState(r))
     }
@@ -335,10 +344,8 @@ impl Parser {
             TokenType::IntNum => Box::new(Statement::Val(self.parse_int_num())),
             TokenType::FloatNum => Box::new(Statement::Val(self.parse_float_num())),
             _ => {
-                return Err(format!(
-                    "Unsupportet token: {:#?} in index: {}",
-                    token_t, self.index
-                ))
+                eprintln!("{} token in var: {}", "Unsupported".red(), self.c_token.clone());
+                return Err(self.report_error().err().unwrap());
             }
         };
 
@@ -377,13 +384,15 @@ impl Parser {
         Ok(left_part)
     }
 
-    fn parse_int_num(&self) -> VarValue {
+    fn parse_int_num(&mut self) -> VarValue {
         let val = self.c_token.clone().value.parse::<i64>().unwrap();
+        self.advance().unwrap();
         VarValue::ExprVal(Expression::new(ExpressionType::IntNumber(val)))
     }
 
-    fn parse_float_num(&self) -> VarValue {
+    fn parse_float_num(&mut self) -> VarValue {
         let val = self.c_token.clone().value.parse::<f64>().unwrap();
+        self.advance().unwrap();
         VarValue::ExprVal(Expression::new(ExpressionType::FloatNumber(val)))
     }
 
@@ -393,11 +402,8 @@ impl Parser {
 
     fn expect(&self, exp_t: TokenType) -> Result<(), String> {
         if self.c_token.t_type != exp_t {
-            return Err(format!(
-                "Expecting {:#?}, found: {}",
-                exp_t,
-                self.c_token.clone()
-            ));
+            eprintln!("Expecting token {:#?}, found: {}", exp_t, self.c_token.clone());
+            return Err(self.report_error().err().unwrap());
         }
         Ok(())
     }
@@ -418,6 +424,7 @@ impl Parser {
             if self.c_token.t_type == Comma {
                 self.advance()?;
             } else {
+                println!("how: {}", self.c_token.clone());
                 args.push(self.parse_id());
                 self.advance()?;
             }
