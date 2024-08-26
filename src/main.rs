@@ -32,9 +32,10 @@ fn run() {
     let source = read_file();
     let mut scanner = Scanner::new(source.clone());
     let mut parser = Parser::new(scanner.scan_tokens());
-    let mut env = Environment::new(None);
+    parser.parse().unwrap();
+    //let mut env = Environment::new(None);
 
-    eval_program(parser.parse().unwrap(), &mut env).unwrap();
+    //eval_program(parser.parse().unwrap(), &mut env).unwrap();
 }
 
 fn main() {

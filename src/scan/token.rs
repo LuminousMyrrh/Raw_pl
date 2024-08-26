@@ -64,8 +64,8 @@ pub enum TokenType {
 
 impl fmt::Display for Token {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Token: {:?} ", self.t_type)?;
-        write!(f, "Value: {}", self.value)?;
+        write!(f, "{:?} ", self.t_type)?;
+        write!(f, "{}", self.value)?;
         Ok(())
     }
 }

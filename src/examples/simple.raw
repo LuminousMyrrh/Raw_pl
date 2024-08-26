@@ -1,5 +1,7 @@
-if 10 == 10 {
-    println("hello");
+var some = 324;
+
+if some == 10 {
+    println("how");
 } else {
-    println("world");
+    println("no");
 }

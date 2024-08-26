@@ -90,7 +90,7 @@ impl Expression {
 pub enum ExpressionType {
     IntNumber(i64),
     FloatNumber(f64),
-    Bool(bool),
+    //Bool(bool),
     BinaryExpression {
         left: Box<Statement>,
         operator: String,
